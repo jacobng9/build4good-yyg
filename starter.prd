@@ -1,0 +1,58 @@
+# PRD: AstroSync — Extreme Environment Health Monitor
+
+## 1. Executive Summary
+**AstroSync** is a remote health monitoring dashboard designed for high-isolation environments (Mars transit, lunar bases, or rural terrestrial clinics). It leverages **Digital Signal Processing (DSP)** to transform raw heart rate data into actionable "Space Readiness" metrics, addressing the "Build for Good" mission by bridging the gap in remote specialized care.
+
+---
+
+## 2. Target Audience
+* **Astronauts/Explorers:** Monitoring physiological adaptation to microgravity.
+* **Rural Healthcare Providers:** Using low-cost sensors (like phone cameras) for advanced cardiovascular screening.
+* **Mission Control:** Overseeing the safety of isolated teams.
+
+---
+
+## 3. Core Features (MVP)
+
+### 3.1 Live Dashboard (Frontend)
+* **Real-time Visualization:** 3D-styled line charts for Heart Rate (BPM) and Heart Rate Variability (HRV).
+* **Space Readiness Score:** A dynamic gauge (0–100) calculated from physiological stress and fatigue markers.
+* **Atmospheric Context:** A sidebar displaying simulated environment data (e.g., $O_2$ levels, ambient radiation, and gravity constant $g$).
+
+### 3.2 Signal Processing Engine (Backend)
+* **Fourier Decomposition:** Transform raw PPG time-domain data into frequency-domain components to isolate the pulse signal from noise.
+* **Stress Analysis:** Calculate the ratio of Low Frequency (LF) to High Frequency (HF) heart rate components to estimate autonomic nervous system stress.
+* **Microgravity Simulation:** A "Toggle" feature that adjusts baseline blood volume expectations based on fluid shifts in low-gravity environments.
+
+---
+
+## 4. Technical Stack
+* **Frontend:** Next.js 14, Tailwind CSS, Shadcn/UI, Recharts (for data viz), Framer Motion (for "space" animations).
+* **Backend:** FastAPI (Python) for heavy mathematical lifting.
+* **Processing:** NumPy, SciPy (for Fourier Transforms and Peak Detection).
+* **Data:** Mocked real-time stream via WebSockets or polling a static `.csv` (e.g., `ppg_norm.csv`).
+
+---
+
+## 5. Success Metrics (Judging Criteria)
+* **Impact:** Does the app provide a clear health benefit for isolated populations?
+* **Technical Execution:** Is the Fourier transform accurate? Does the dashboard update without lag?
+* **Creativity:** Does the "Gravity Simulation" offer a unique, unexpected twist on the "Space" theme?
+
+---
+
+## 6. Implementation Timeline (48-Hour Hack)
+
+| Timeframe | Task |
+| :--- | :--- |
+| **Hour 0-4** | Setup Next.js + Tailwind. Create the "Deep Space" UI theme. |
+| **Hour 5-12** | Build the FastAPI backend. Port the Fourier logic to an API endpoint. |
+| **Hour 13-24** | Connect Frontend to Backend. Map the FFT results to the Recharts components. |
+| **Hour 25-36** | Implement the "Space Readiness" algorithm and "Gravity Toggle" logic. |
+| **Hour 37-48** | Polishing UI, recording the demo, and preparing the "Presentation" pitch. |
+
+---
+
+## 7. User Stories
+* *As a mission medic, I want to see a crew member's stress levels in real-time so I can intervene before they reach burnout.*
+* *As a remote patient, I want a high-fidelity analysis of my heart health using only basic sensor data.*
