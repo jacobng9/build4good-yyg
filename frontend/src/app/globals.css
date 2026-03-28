@@ -1,0 +1,227 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================
+   AstroSync — Deep Space Theme
+   ============================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  /* Deep Space Palette */
+  --space-void: #050510;
+  --space-deep: #0a0a1a;
+  --space-mid: #111130;
+  --space-surface: #1a1a3e;
+  --space-elevated: #24245a;
+
+  /* Accent Colors */
+  --cyan-glow: #00f0ff;
+  --cyan-dim: #00a8b3;
+  --violet-plasma: #8b5cf6;
+  --violet-deep: #6d28d9;
+  --nebula-pink: #f472b6;
+  --solar-amber: #f59e0b;
+  --aurora-green: #34d399;
+  --danger-red: #ef4444;
+
+  /* Text */
+  --text-primary: #e8eaf6;
+  --text-secondary: #9ca3c0;
+  --text-dim: #5c6080;
+
+  /* Glassmorphism */
+  --glass-bg: rgba(26, 26, 62, 0.4);
+  --glass-border: rgba(0, 240, 255, 0.12);
+  --glass-hover: rgba(0, 240, 255, 0.06);
+
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--space-void);
+  color: var(--text-primary);
+  font-family: 'Inter', sans-serif;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--space-deep);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--space-elevated);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--cyan-dim);
+}
+
+/* ============================================
+   Glass Card Component
+   ============================================ */
+.glass-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card:hover {
+  border-color: rgba(0, 240, 255, 0.25);
+  background: rgba(26, 26, 62, 0.55);
+}
+
+/* ============================================
+   Glow Effects
+   ============================================ */
+.glow-cyan {
+  box-shadow: 0 0 15px rgba(0, 240, 255, 0.15),
+              0 0 30px rgba(0, 240, 255, 0.05);
+}
+
+.glow-text-cyan {
+  text-shadow: 0 0 8px rgba(0, 240, 255, 0.4),
+               0 0 20px rgba(0, 240, 255, 0.15);
+}
+
+.glow-violet {
+  box-shadow: 0 0 15px rgba(139, 92, 246, 0.15),
+              0 0 30px rgba(139, 92, 246, 0.05);
+}
+
+/* ============================================
+   Animations
+   ============================================ */
+@keyframes pulse-glow {
+  0%, 100% {
+    opacity: 0.7;
+    filter: brightness(1);
+  }
+  50% {
+    opacity: 1;
+    filter: brightness(1.3);
+  }
+}
+
+@keyframes scan-line {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-6px); }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.animate-float {
+  animation: float 4s ease-in-out infinite;
+}
+
+/* Recharts customizations */
+.recharts-cartesian-grid-horizontal line,
+.recharts-cartesian-grid-vertical line {
+  stroke: rgba(0, 240, 255, 0.06) !important;
+}
+
+.recharts-text {
+  fill: var(--text-dim) !important;
+  font-family: 'JetBrains Mono', monospace !important;
+  font-size: 10px !important;
+}
+
+/* ============================================
+   Dashboard Grid
+   ============================================ */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  grid-template-rows: auto 1fr auto;
+  gap: 16px;
+  height: 100vh;
+  padding: 16px;
+  overflow: hidden;
+}
+
+.main-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+}
+
+.charts-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+}
+
+.sidebar-area {
+  grid-row: 1 / -1;
+  grid-column: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* ============================================
+   Section Labels
+   ============================================ */
+.section-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+
+.metric-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================
+   Status Bar Indicator
+   ============================================ */
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--aurora-green);
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
+
+.status-dot.warning {
+  background: var(--solar-amber);
+}
+
+.status-dot.critical {
+  background: var(--danger-red);
+}
