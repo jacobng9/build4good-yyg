@@ -165,6 +165,11 @@ def extract_concepts_with_gemini(raw_text: str) -> list[dict]:
     if response_text.startswith("```"):
         response_text = re.sub(r"^```(?:json)?\s*\n?", "", response_text)
         response_text = re.sub(r"\n?```\s*$", "", response_text)
+    
+    # Aggressively defensively double-escape isolated unescaped LaTeX backslashes the AI hallucinates.
+    # We use negative lookbehind (?<!\\) and lookahead to ONLY target naked single backslashes that violate JSON standards.
+    response_text = re.sub(r'(?<!\\)\\(?![\\/bfnrtu"])', r'\\\\', response_text)
+
     data = json.loads(response_text)
     return data.get("concepts", [])[:8] # Max 8 concepts
 
