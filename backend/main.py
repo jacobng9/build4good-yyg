@@ -8,13 +8,13 @@ import json
 import os
 import re
 import uuid
-from io import BytesIO
-from typing import Optional
-from urllib.parse import quote
+from typing import List, Optional
+
+import requests
 
 import fitz  # PyMuPDF
-import google.generativeai as genai
-import requests
+import base64
+from groq import Groq
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,13 +24,10 @@ from pydantic import BaseModel
 
 load_dotenv()
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-IMAGE_API = os.getenv("IMAGE_API", "pollinations")
-STABILITY_API_KEY = os.getenv("STABILITY_API_KEY", "")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+POLLINATIONS_API_KEY = os.getenv("POLLINATIONS_API_KEY", "")
 
-# Configure Gemini
-if GEMINI_API_KEY and GEMINI_API_KEY != "your_gemini_api_key_here":
-    genai.configure(api_key=GEMINI_API_KEY)
+
 
 # ─── App Setup ───────────────────────────────────────────────────────────────
 
@@ -42,7 +39,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -55,35 +52,43 @@ class Concept(BaseModel):
     id: str
     name: str
     definition: str
-    related_to: list[str] = []
-    image_prompt: str = ""
+    related_to: List[str] = []
+    image_prompt: Optional[str] = None
     image_url: Optional[str] = None
     status: str = "pending"  # pending | generating | done | error
 
 
+class ExtractRequest(BaseModel):
+    session_id: str
+    raw_text: str
+
+
 class ExtractResponse(BaseModel):
     session_id: str
-    concepts: list[Concept]
+    concepts: List[Concept]
+
+
+class GenerateRequest(BaseModel):
+    session_id: str
+    concepts: List[Concept]
 
 
 class GenerateResponse(BaseModel):
     session_id: str
-    concepts: list[Concept]
+    concepts: List[Concept]
 
 
 class AskRequest(BaseModel):
     session_id: str
     concept_id: str
     question: str
+    raw_text: str = ""
+    concepts: List[Concept] = []
 
 
 class AskResponse(BaseModel):
     answer: str
 
-
-# ─── In-Memory Session Store ────────────────────────────────────────────────
-
-sessions: dict = {}
 
 # ─── Gemini Prompts ─────────────────────────────────────────────────────────
 
@@ -104,10 +109,12 @@ Rules:
 Notes:
 {raw_text}"""
 
-IMAGE_PROMPT_GENERATION = """Convert this concept into a vivid, metaphorical image generation prompt.
-The image should be illustrative and help a student intuitively understand the concept.
-Avoid text, charts, or diagrams. Think editorial illustration or conceptual art.
-Use vivid colors, interesting compositions, and creative metaphors.
+IMAGE_PROMPT_GENERATION = """Create a short image generation prompt for this concept.
+The image must directly illustrate the concept itself, NOT an abstract metaphor.
+For example, if the concept is "Derivative of a Vector Function", show a 3D curve with tangent vectors drawn on it.
+If the concept is "Newton's Third Law", show two objects exerting equal and opposite forces on each other.
+Keep it concrete, educational, and visually clear. Think textbook illustration style with clean colors.
+No text or labels in the image. Keep the prompt under 80 words.
 Concept: {name} — {definition}
 Return only the image prompt, nothing else."""
 
@@ -127,49 +134,74 @@ def parse_pdf(content: bytes) -> str:
 
 def parse_image_with_gemini(content: bytes, filename: str) -> str:
     """Use Gemini Vision to transcribe text from an image."""
-    model = genai.GenerativeModel("gemini-1.5-flash")
-    
-    # Determine mime type
+    client = Groq(api_key=GROQ_API_KEY)
     ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else "png"
     mime_map = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg"}
     mime_type = mime_map.get(ext, "image/png")
     
-    response = model.generate_content([
-        "Transcribe all text visible in this image. Return just the text content, preserving the structure as much as possible.",
-        {"mime_type": mime_type, "data": content},
-    ])
-    return response.text
+    base64_image = base64.b64encode(content).decode('utf-8')
+    chat_completion = client.chat.completions.create(
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Transcribe all text visible in this image. Return just the text content, preserving the structure as much as possible."},
+                    {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{base64_image}"}}
+                ]
+            }
+        ],
+        model="llama-3.2-11b-vision-preview"
+    )
+    return chat_completion.choices[0].message.content
 
 
 def extract_concepts_with_gemini(raw_text: str) -> list[dict]:
     """Send text to Gemini and get structured concept list."""
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    client = Groq(api_key=GROQ_API_KEY)
     prompt = CONCEPT_EXTRACTION_PROMPT.format(raw_text=raw_text)
 
-    response = model.generate_content(prompt)
-    response_text = response.text.strip()
+    chat_completion = client.chat.completions.create(
+        messages=[{"role": "user", "content": prompt}],
+        model="llama-3.3-70b-versatile"
+    )
+    response_text = chat_completion.choices[0].message.content.strip()
 
     # Strip markdown code fences if present
     if response_text.startswith("```"):
         response_text = re.sub(r"^```(?:json)?\s*\n?", "", response_text)
         response_text = re.sub(r"\n?```\s*$", "", response_text)
 
-    data = json.loads(response_text)
+    # Find JSON boundaries
+    start_idx = response_text.find("{")
+    end_idx = response_text.rfind("}") + 1
+    if start_idx == -1 or end_idx == 0:
+        raise ValueError("No JSON object found in Gemini response")
+
+    json_str = response_text[start_idx:end_idx]
+    data = json.loads(json_str)
     return data.get("concepts", [])
 
 
 def generate_image_prompt_with_gemini(name: str, definition: str) -> str:
     """Use Gemini to create a vivid image generation prompt for a concept."""
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    client = Groq(api_key=GROQ_API_KEY)
     prompt = IMAGE_PROMPT_GENERATION.format(name=name, definition=definition)
-    response = model.generate_content(prompt)
-    return response.text.strip()
+    chat_completion = client.chat.completions.create(
+        messages=[{"role": "user", "content": prompt}],
+        model="llama-3.3-70b-versatile"
+    )
+    return chat_completion.choices[0].message.content.strip()
 
 
-def get_pollinations_url(prompt: str, width: int = 1024, height: int = 1024) -> str:
-    """Generate an image URL using Pollinations.ai (no API key needed)."""
-    encoded = quote(prompt)
-    return f"https://image.pollinations.ai/prompt/{encoded}?width={width}&height={height}&nologo=true"
+def generate_pollinations_image(prompt: str, width: int = 512, height: int = 512) -> str:
+    """Generate an image URL via Pollinations GET endpoint without downloading it."""
+    clean_prompt = prompt.strip('"').strip("'")
+    if len(clean_prompt) > 1200:
+        clean_prompt = clean_prompt[:1200]
+
+    encoded_prompt = requests.utils.quote(clean_prompt)
+    url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={width}&height={height}&nologo=true&model=flux"
+    return url
 
 
 # ─── Endpoints ───────────────────────────────────────────────────────────────
@@ -177,7 +209,10 @@ def get_pollinations_url(prompt: str, width: int = 1024, height: int = 1024) -> 
 
 @app.get("/")
 async def root():
-    return {"message": "NotesViz API is running", "gemini_configured": bool(GEMINI_API_KEY and GEMINI_API_KEY != "your_gemini_api_key_here")}
+    return {
+        "message": "NotesViz API is running",
+        "gemini_configured": bool(GROQ_API_KEY and GROQ_API_KEY != "your_groq_api_key_here"),
+    }
 
 
 @app.post("/api/parse")
@@ -186,7 +221,7 @@ async def parse_notes(
     text: Optional[str] = Form(None),
 ):
     """
-    Accept a file upload (PDF, image, docx) or plain text paste.
+    Accept a file upload (PDF, image) or plain text paste.
     Returns the extracted raw text and a session ID.
     """
     if file is None and text is None:
@@ -205,7 +240,6 @@ async def parse_notes(
             try:
                 raw_text = parse_pdf(content)
             except Exception as e:
-                # Fallback: try Gemini Vision on the PDF rendered as image
                 raise HTTPException(status_code=500, detail=f"PDF parsing failed: {str(e)}")
 
         elif filename.lower().endswith((".png", ".jpg", ".jpeg")):
@@ -226,31 +260,21 @@ async def parse_notes(
     if not raw_text.strip():
         raise HTTPException(status_code=400, detail="No text could be extracted from the input.")
 
-    sessions[session_id] = {
-        "raw_text": raw_text,
-        "concepts": [],
-    }
-
     return {"session_id": session_id, "raw_text": raw_text}
 
 
-@app.post("/api/extract", response_model=ExtractResponse)
-async def extract_concepts(session_id: str = Form(...)):
+@app.post("/api/extract")
+async def extract_concepts(request: ExtractRequest):
     """
-    Send session text to Gemini, get concepts + relationships JSON.
+    Send raw text to Groq, get concepts + relationships JSON.
     """
-    if session_id not in sessions:
-        raise HTTPException(status_code=404, detail="Session not found.")
-
-    if not GEMINI_API_KEY or GEMINI_API_KEY == "your_gemini_api_key_here":
-        raise HTTPException(status_code=500, detail="Gemini API key not configured. Set GEMINI_API_KEY in backend/.env")
-
-    raw_text = sessions[session_id]["raw_text"]
+    if not GROQ_API_KEY or GROQ_API_KEY == "your_groq_api_key_here":
+        raise HTTPException(status_code=500, detail="Groq API key not configured. Set GROQ_API_KEY in backend/.env")
 
     try:
-        concept_dicts = extract_concepts_with_gemini(raw_text)
+        concept_dicts = extract_concepts_with_gemini(request.raw_text)
     except json.JSONDecodeError as e:
-        raise HTTPException(status_code=500, detail=f"Failed to parse Gemini response as JSON: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to parse Groq response as JSON: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Concept extraction failed: {str(e)}")
 
@@ -264,87 +288,73 @@ async def extract_concepts(session_id: str = Form(...)):
         for i, c in enumerate(concept_dicts)
     ]
 
-    sessions[session_id]["concepts"] = concepts
-    return ExtractResponse(session_id=session_id, concepts=concepts)
+    # Limit to 10
+    concepts = concepts[:10]
+
+    return {"session_id": request.session_id, "concepts": [c.dict() for c in concepts]}
 
 
-@app.post("/api/generate", response_model=GenerateResponse)
-async def generate_images(session_id: str = Form(...)):
+@app.post("/api/generate")
+async def generate_images(request: GenerateRequest):
     """
-    For each concept, generate an image prompt via Gemini, then get image URL from Pollinations.ai.
+    For each concept, generate an image prompt via Groq, then get image URL from Pollinations.ai.
     """
-    if session_id not in sessions:
-        raise HTTPException(status_code=404, detail="Session not found.")
+    if not request.concepts:
+        raise HTTPException(status_code=400, detail="No concepts provided.")
 
-    concepts: list[Concept] = sessions[session_id].get("concepts", [])
-    if not concepts:
-        raise HTTPException(status_code=400, detail="No concepts found. Run /api/extract first.")
+    if not GROQ_API_KEY or GROQ_API_KEY == "your_groq_api_key_here":
+        raise HTTPException(status_code=500, detail="Groq API key not configured. Set GROQ_API_KEY in backend/.env")
 
-    if not GEMINI_API_KEY or GEMINI_API_KEY == "your_gemini_api_key_here":
-        raise HTTPException(status_code=500, detail="Gemini API key not configured. Set GEMINI_API_KEY in backend/.env")
-
-    updated_concepts = []
-    for concept in concepts:
+    async def process_concept(concept: Concept) -> Concept:
         try:
-            concept.status = "generating"
-
-            # Generate image prompt via Gemini
             image_prompt = generate_image_prompt_with_gemini(concept.name, concept.definition)
-            concept.image_prompt = image_prompt
-
-            # Get image URL from Pollinations.ai
-            concept.image_url = get_pollinations_url(image_prompt)
-            concept.status = "done"
-
+            print(f"  [IMG] Generating prompt for '{concept.name}'...")
+            image_url = generate_pollinations_image(image_prompt)
+            print(f"  [IMG] Got image URL for '{concept.name}': {image_url[:80]}...")
+            return Concept(
+                id=concept.id,
+                name=concept.name,
+                definition=concept.definition,
+                related_to=concept.related_to,
+                image_prompt=image_prompt,
+                image_url=image_url,
+                status="done",
+            )
         except Exception as e:
-            concept.status = "error"
-            concept.image_prompt = f"Error: {str(e)}"
+            return Concept(
+                id=concept.id,
+                name=concept.name,
+                definition=concept.definition,
+                related_to=concept.related_to,
+                image_prompt=f"Error: {str(e)}",
+                image_url=None,
+                status="error",
+            )
 
-        updated_concepts.append(concept)
+    # Process all concepts (sequentially to avoid rate limits)
+    updated_concepts = []
+    for concept in request.concepts:
+        result = await process_concept(concept)
+        updated_concepts.append(result)
 
-    sessions[session_id]["concepts"] = updated_concepts
-    return GenerateResponse(session_id=session_id, concepts=updated_concepts)
-
-
-@app.get("/api/status/{job_id}")
-async def get_status(job_id: str):
-    """Poll generation progress for a given session/job."""
-    if job_id not in sessions:
-        raise HTTPException(status_code=404, detail="Job not found.")
-
-    concepts = sessions[job_id].get("concepts", [])
-    total = len(concepts)
-    done = sum(1 for c in concepts if c.status == "done" if isinstance(c, Concept))
-
-    return {
-        "job_id": job_id,
-        "total": total,
-        "done": done,
-        "status": "complete" if done == total and total > 0 else "in_progress",
-    }
+    return {"session_id": request.session_id, "concepts": [c.dict() for c in updated_concepts]}
 
 
-@app.post("/api/ask", response_model=AskResponse)
+@app.post("/api/ask")
 async def ask_question(request: AskRequest):
-    """Follow-up Q&A on a specific concept (stretch goal)."""
-    if request.session_id not in sessions:
-        raise HTTPException(status_code=404, detail="Session not found.")
-
-    if not GEMINI_API_KEY or GEMINI_API_KEY == "your_gemini_api_key_here":
+    """Follow-up Q&A on a specific concept."""
+    if not GROQ_API_KEY or GROQ_API_KEY == "your_groq_api_key_here":
         raise HTTPException(status_code=500, detail="Gemini API key not configured.")
 
-    session = sessions[request.session_id]
-    concepts = session.get("concepts", [])
-    concept = next((c for c in concepts if c.id == request.concept_id), None)
-
+    concept = next((c for c in request.concepts if c.id == request.concept_id), None)
     if not concept:
         raise HTTPException(status_code=404, detail="Concept not found.")
 
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    client = Groq(api_key=GROQ_API_KEY)
     prompt = f"""You are a helpful tutor. A student is studying and has a question about a specific concept from their notes.
 
 Context (original notes excerpt):
-{session['raw_text'][:2000]}
+{request.raw_text[:2000]}
 
 Concept: {concept.name} — {concept.definition}
 
@@ -353,8 +363,11 @@ Student's question: {request.question}
 Give a clear, helpful answer in 2-3 sentences."""
 
     try:
-        response = model.generate_content(prompt)
-        return AskResponse(answer=response.text.strip())
+        chat_completion = client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model="llama-3.3-70b-versatile"
+        )
+        return {"answer": chat_completion.choices[0].message.content.strip()}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Q&A failed: {str(e)}")
 

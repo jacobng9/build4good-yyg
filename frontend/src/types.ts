@@ -5,20 +5,14 @@ export interface Concept {
   name: string
   definition: string
   related_to: string[]
-  image_prompt: string
+  image_prompt: string | null
   image_url: string | null
   status: 'pending' | 'generating' | 'done' | 'error'
 }
 
 export interface Session {
-  id: string
-  raw_text: string
-  concepts: Concept[]
-  created_at: string
-}
-
-export interface ExtractResponse {
   session_id: string
+  raw_text: string
   concepts: Concept[]
 }
 
@@ -27,23 +21,14 @@ export interface ParseResponse {
   raw_text: string
 }
 
+export interface ExtractResponse {
+  session_id: string
+  concepts: Concept[]
+}
+
 export interface GenerateResponse {
   session_id: string
-  status: string
-  message: string
-}
-
-export interface StatusResponse {
-  job_id: string
-  total: number
-  done: number
-  status: 'in_progress' | 'complete'
-}
-
-export interface AskRequest {
-  session_id: string
-  concept_id: string
-  question: string
+  concepts: Concept[]
 }
 
 export interface AskResponse {
