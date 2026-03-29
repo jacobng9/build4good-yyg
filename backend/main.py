@@ -127,7 +127,7 @@ def parse_pdf(content: bytes) -> str:
 
 def parse_image_with_gemini(content: bytes, filename: str) -> str:
     """Use Gemini Vision to transcribe text from an image."""
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel("gemini-1.5-flash-latest")
     
     # Determine mime type
     ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else "png"
@@ -143,7 +143,7 @@ def parse_image_with_gemini(content: bytes, filename: str) -> str:
 
 def extract_concepts_with_gemini(raw_text: str) -> list[dict]:
     """Send text to Gemini and get structured concept list."""
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel("gemini-1.5-flash-latest")
     prompt = CONCEPT_EXTRACTION_PROMPT.format(raw_text=raw_text)
 
     response = model.generate_content(prompt)
@@ -160,7 +160,7 @@ def extract_concepts_with_gemini(raw_text: str) -> list[dict]:
 
 def generate_image_prompt_with_gemini(name: str, definition: str) -> str:
     """Use Gemini to create a vivid image generation prompt for a concept."""
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel("gemini-1.5-flash-latest")
     prompt = IMAGE_PROMPT_GENERATION.format(name=name, definition=definition)
     response = model.generate_content(prompt)
     return response.text.strip()
@@ -340,7 +340,7 @@ async def ask_question(request: AskRequest):
     if not concept:
         raise HTTPException(status_code=404, detail="Concept not found.")
 
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel("gemini-1.5-flash-latest")
     prompt = f"""You are a helpful tutor. A student is studying and has a question about a specific concept from their notes.
 
 Context (original notes excerpt):
