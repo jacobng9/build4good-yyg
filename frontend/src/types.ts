@@ -1,12 +1,19 @@
 // ─── Data Models (from PRD Section 7) ────────────────────────────────────────
 
+export interface Example {
+  problem: string
+  solution: string
+}
+
 export interface Concept {
   id: string
   name: string
   definition: string
+  equations: string[]
+  examples: Example[]
   related_to: string[]
-  image_prompt: string
-  image_url: string | null
+  image_prompts: string[]
+  image_urls: string[]
   status: 'pending' | 'generating' | 'done' | 'error'
 }
 
@@ -31,6 +38,7 @@ export interface GenerateResponse {
   session_id: string
   status: string
   message: string
+  concepts: Concept[]
 }
 
 export interface StatusResponse {

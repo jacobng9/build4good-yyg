@@ -12,6 +12,50 @@ interface ProcessingStage {
   status: 'pending' | 'active' | 'done' | 'error'
 }
 
+const renderMathText = (text: string) => {
+  if (!text) return text;
+  // Splits by $math$ blocks, keeping the block intact in the array
+  const parts = text.split(/(\$[^$]+\$)/g);
+  return parts.map((part, index) => {
+    if (part.startsWith('$') && part.endsWith('$')) {
+      const latex = part.slice(1, -1);
+      if (typeof (window as any).katex !== 'undefined') {
+        try {
+          const html = (window as any).katex.renderToString(latex, { throwOnError: false });
+          return <span key={index} dangerouslySetInnerHTML={{ __html: html }} className="text-blue-100 tracking-wide px-0.5 inline-block" />;
+        } catch(e) {}
+      }
+      return (
+        <span key={index} className="font-serif italic text-blue-200 tracking-wide px-0.5">
+          {latex}
+        </span>
+      );
+    }
+    // Render normal bold markdown like **word** safely
+    const boldParts = part.split(/(\*\*[^*]+\*\*)/g);
+    return (
+      <span key={index}>
+        {boldParts.map((bPart, bIndex) => {
+          if (bPart.startsWith('**') && bPart.endsWith('**')) {
+            return <strong key={bIndex} className="text-white font-semibold">{bPart.slice(2, -2)}</strong>;
+          }
+          return <span key={bIndex}>{bPart}</span>;
+        })}
+      </span>
+    );
+  });
+};
+
+const renderKaTeX = (latex: string) => {
+  if (typeof (window as any).katex !== 'undefined') {
+    try {
+      const html = (window as any).katex.renderToString(latex, { throwOnError: false, displayMode: true });
+      return <div dangerouslySetInnerHTML={{ __html: html }} className="text-blue-100 drop-shadow-[0_0_8px_rgba(59,130,246,0.5)] w-full overflow-x-auto text-center" />;
+    } catch(e) {}
+  }
+  return <span className="font-serif italic tracking-wider text-xl text-blue-100 drop-shadow-[0_0_8px_rgba(59,130,246,0.6)]">{latex}</span>;
+}
+
 function App() {
   const [view, setView] = useState<AppView>('upload')
   const [textInput, setTextInput] = useState('')
@@ -44,7 +88,7 @@ function App() {
       updateStage(1, 'active')
 
       // Step 2: Extract concepts
-      const extractResult = await extractConcepts(parseResult.session_id)
+      await extractConcepts(parseResult.session_id)
       updateStage(1, 'done')
       updateStage(2, 'active')
 
@@ -312,10 +356,10 @@ function App() {
                     className="group cursor-pointer rounded-2xl border border-surface-border bg-surface-card/60 backdrop-blur-sm overflow-hidden hover:border-brand-500/40 hover:shadow-lg hover:shadow-brand-500/10 transition-all duration-300 hover:-translate-y-1"
                   >
                     {/* Image */}
-                    {concept.image_url && (
+                    {concept.image_urls && concept.image_urls.length > 0 && (
                       <div className="aspect-square overflow-hidden bg-surface-hover">
                         <img
-                          src={concept.image_url}
+                          src={concept.image_urls[0]}
                           alt={concept.name}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                           loading="lazy"
@@ -326,9 +370,9 @@ function App() {
                     {/* Text */}
                     <div className="p-4">
                       <h3 className="font-semibold text-white mb-1 group-hover:text-brand-300 transition-colors">
-                        {concept.name}
+                        {renderMathText(concept.name)}
                       </h3>
-                      <p className="text-gray-500 text-sm line-clamp-2">{concept.definition}</p>
+                      <p className="text-gray-500 text-sm line-clamp-2">{renderMathText(concept.definition)}</p>
 
                       {concept.related_to.length > 0 && (
                         <div className="mt-3 flex flex-wrap gap-1.5">
@@ -377,20 +421,66 @@ function App() {
                           ← Back to concepts
                         </button>
 
-                        {/* Image */}
-                        {selectedConcept.image_url && (
-                          <div className="rounded-xl overflow-hidden mb-6 border border-surface-border">
-                            <img
-                              src={selectedConcept.image_url}
-                              alt={selectedConcept.name}
-                              className="w-full"
-                            />
+                        {/* Image Carousel */}
+                        {selectedConcept.image_urls && selectedConcept.image_urls.length > 0 && (
+                          <div className="mb-6 space-y-2">
+                            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-widest px-1">Visual Perspectives</h3>
+                            <div className="flex overflow-x-auto gap-4 snap-x snap-mandatory pb-4" style={{ scrollbarWidth: 'none' }}>
+                              {selectedConcept.image_urls.map((imgUrl, i) => (
+                                <div key={i} className="shrink-0 w-full sm:w-[85%] rounded-xl overflow-hidden border border-surface-border snap-center relative group bg-surface-hover">
+                                  <img
+                                    src={imgUrl}
+                                    alt={`${selectedConcept.name} perspective ${i+1}`}
+                                    className="w-full h-auto aspect-square object-cover"
+                                  />
+                                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4">
+                                    <p className="text-[10px] text-brand-300 font-medium tracking-widest leading-relaxed font-serif uppercase line-clamp-4">
+                                      {selectedConcept.image_prompts?.[i]}
+                                    </p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="flex justify-center gap-1.5 mt-[-10px] pb-4">
+                              {selectedConcept.image_urls.map((_, i) => (
+                                <div key={i} className="w-1.5 h-1.5 rounded-full bg-brand-500/50"></div>
+                              ))}
+                            </div>
                           </div>
                         )}
 
                         {/* Content */}
-                        <h2 className="text-2xl font-bold text-white mb-3">{selectedConcept.name}</h2>
-                        <p className="text-gray-300 leading-relaxed mb-6">{selectedConcept.definition}</p>
+                        <h2 className="text-2xl font-bold text-white mb-3">{renderMathText(selectedConcept.name)}</h2>
+                        <p className="text-gray-300 leading-relaxed mb-6 whitespace-pre-line">{renderMathText(selectedConcept.definition)}</p>
+
+                        {/* Equations */}
+                        {selectedConcept.equations && selectedConcept.equations.length > 0 && (
+                          <div className="mb-6 space-y-3">
+                            <h3 className="text-sm font-semibold text-brand-300 uppercase tracking-wider">Key Equations</h3>
+                            {selectedConcept.equations.map((eq, i) => (
+                              <div key={i} className="flex justify-center items-center py-4 px-2 bg-black/40 border border-brand-500/20 rounded-xl shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)] overflow-x-auto">
+                                {renderKaTeX(eq)}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Examples */}
+                        {selectedConcept.examples && selectedConcept.examples.length > 0 && (
+                          <div className="mb-8 space-y-4">
+                            <h3 className="text-sm font-semibold text-green-400 uppercase tracking-wider">Example Problem</h3>
+                            {selectedConcept.examples.map((ex, i) => (
+                              <div key={i} className="bg-surface-border/30 border border-surface-border rounded-xl p-4 shadow-sm">
+                                <p className="text-sm font-medium text-white mb-3 pb-3 border-b border-surface-border/50 text-balance">
+                                  <span className="text-gray-400 mr-2 font-bold tracking-widest">Q:</span> {renderMathText(ex.problem)}
+                                </p>
+                                <p className="text-sm text-gray-300 leading-relaxed text-balance">
+                                  <span className="text-green-400 mr-2 font-bold tracking-widest">A:</span> {renderMathText(ex.solution)}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
 
                         {/* Related Concepts */}
                         {selectedConcept.related_to.length > 0 && (
@@ -414,15 +504,6 @@ function App() {
                           </div>
                         )}
 
-                        {/* Image Prompt (for debugging/interest) */}
-                        {selectedConcept.image_prompt && (
-                          <div>
-                            <h3 className="text-sm font-semibold text-gray-400 mb-2 uppercase tracking-wider">Image Prompt</h3>
-                            <p className="text-gray-500 text-sm italic bg-surface/50 rounded-lg p-3 border border-surface-border">
-                              {selectedConcept.image_prompt}
-                            </p>
-                          </div>
-                        )}
                       </div>
                     </motion.div>
                   </>

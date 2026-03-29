@@ -1,5 +1,5 @@
 """
-NotesViz — Backend API
+NotesViz — Backend API (Active - Reload)
 FastAPI server with endpoints for note parsing, concept extraction, and image generation.
 (reloaded)
 """
@@ -24,7 +24,7 @@ from pydantic import BaseModel
 
 # ─── Load environment variables ──────────────────────────────────────────────
 
-load_dotenv()
+load_dotenv(override=True)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 STABILITY_API_KEY = os.getenv("STABILITY_API_KEY", "")
@@ -56,9 +56,11 @@ class Concept(BaseModel):
     id: str
     name: str
     definition: str
+    equations: list[str] = []
+    examples: list[dict] = []
     related_to: list[str] = []
-    image_prompt: str = ""
-    image_url: Optional[str] = None
+    image_prompts: list[str] = []
+    image_urls: list[str] = []
     status: str = "pending"  # pending | generating | done | error
 
 class ExtractResponse(BaseModel):
@@ -83,33 +85,47 @@ sessions: dict = {}
 
 # ─── Gemini Prompts ─────────────────────────────────────────────────────────
 
-CONCEPT_EXTRACTION_PROMPT = """You are an expert educator. Given the following notes, extract up to 8 key concepts.
-Return ONLY valid JSON in this format (no markdown code fences, just raw JSON):
+CONCEPT_EXTRACTION_PROMPT = """You are an expert university professor. Given the following mathematical/technical notes, conceptually map up to 8 core ideas.
+Return ONLY valid JSON in this exact format (no markdown fences, just raw JSON):
 {{
   "concepts": [
-    {{ "id": "c1", "name": "Concept Name", "definition": "Clear 1-2 sentence definition", "related_to": ["c2"] }}
+    {{ 
+      "id": "c1", 
+      "name": "Concept Name", 
+      "definition": "A comprehensive, highly descriptive explanation outlining the theory and application. (Must be at least 3-4 distinct sentences.)", 
+      "equations": ["E = mc^2", "\\\\int x dx"], 
+      "examples": [{{"problem": "Sample problem or scenario text", "solution": "Step-by-step solution text."}}],
+      "related_to": ["c2"] 
+    }}
   ]
 }}
 
 Rules:
-- Extract a maximum of 8 concepts to keep things concise.
-- Each concept should have a clear, concise definition.
-- Use related_to to show connections between concepts (reference other concept IDs).
-- IDs should be c1, c2, c3, etc.
+- Deeply extract mathematical/technical context where applicable. If no explicit equations or examples exist, synthesize highly relevant generic textbook examples.
+- Include up to 2 key equations formatted in clean string notation (e.g. standard mathematical syntax).
+- Include 1-2 practical example problems/solutions per concept to build deeper intuitive understanding.
+- Do not exceed 8 concepts. Map connections via related_to IDs.
 
 Notes:
 {raw_text}"""
 
-IMAGE_PROMPTS_BATCH_GENERATION = """Convert the following mathematical/technical concepts into vivid image generation prompts.
+IMAGE_PROMPTS_BATCH_GENERATION = """Convert the following mathematical/technical concepts into 3 distinct, highly correlated vivid image generation prompts each.
 CRUCIAL ART STYLE: The imagery must perfectly mimic the "3Blue1Brown" aesthetic.
 - Pitch-black backgrounds.
 - High-contrast, glowing geometric shapes and math curves in elegant neon colors (blues, golds, pinks, whites, greens).
 - Minimalist, beautiful educational mathematical visualization.
+
+CRUCIAL LOGIC:
+- The images MUST directly relate to the specific underlying meaning of the concept. For example, 'Markov Chains' must show glowing network nodes and probability arrows, NOT generic cosmic islands.
+- Provide exactly 3 distinctly different visualization perspectives per concept (e.g., structural matrix, abstract geometry, graph network).
 Keep EACH prompt under 40 words.
-Return ONLY valid JSON in this format mapping concept IDs to their prompts (no markdown code fences, just raw JSON):
+Return ONLY valid JSON in this format mapping concept IDs to an array of EXACTLY 3 string prompts (no markdown code fences, just raw JSON):
 {{
-  "c1": "A glowing golden parabolic curve intersecting a neon blue plane on a pitch-black background, 3Blue1Brown style minimalist math visualization.",
-  "c2": "Neon pink and green vectors radiating from a central point on a pitch-black background, abstract linear algebra visualization."
+  "c1": [
+    "A glowing golden parabolic curve intersecting a neon blue plane on a pitch-black background, minimalist math visualization.",
+    "A glowing neon green mathematical grid bending underneath a floating gold sphere on a pitch-black background.",
+    "Neon pink abstract vectors radiating from a central point, minimalist linear algebra visualization."
+  ]
 }}
 
 Concepts to process:
@@ -171,10 +187,17 @@ async def generate_image_prompts_batch(concepts: list[Concept]) -> dict[str, str
         return {}
 
 def get_pollinations_url(prompt: str, width: int = 1024, height: int = 1024) -> str:
-    """Return a highly reliable deterministic concept image using Picsum as fallback for deprecated free APIs."""
-    # We use a hash of the prompt specifically to ensure the same concept always gets exactly the same image!
-    prompt_seed = quote(prompt[:50])
-    return f"https://picsum.photos/seed/{prompt_seed}/{width}/{height}"
+    """Return a highly reliable completely free deterministic AI concept image using Pollinations as fallback."""
+    # Add negative prompting and strong styles to ensure high quality math rendering
+    enhanced_prompt = f"{prompt}, dark theme, extremely beautiful abstract minimalist math visualization, highly detailed structure, 3Blue1Brown aesthetic, glowing, pitch black background"
+    # URL encode the prompt and fix seed
+    encoded_prompt = quote(enhanced_prompt)
+    seed = abs(hash(prompt[:50])) % 9999999
+    # We use Pollinations AI API which directly generates text-to-image instantly for free over GET requests
+    return f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={width}&height={height}&nologo=true&seed={seed}&model=flux"
+
+import asyncio
+stability_semaphore = asyncio.Semaphore(5)
 
 async def generate_stability_image(prompt: str) -> Optional[str]:
     """Generate an image using Stability AI and return a base64 data URI."""
@@ -195,8 +218,9 @@ async def generate_stability_image(prompt: str) -> Optional[str]:
         "steps": 30,
     }
     try:
-        async with httpx.AsyncClient(timeout=45.0) as client:
-            response = await client.post(url, headers=headers, json=payload)
+        async with stability_semaphore:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(url, headers=headers, json=payload)
             if response.status_code == 200:
                 data = response.json()
                 artifacts = data.get("artifacts", [])
@@ -258,7 +282,10 @@ async def extract_concepts(session_id: str = Form(...)):
     concepts = [
         Concept(
             id=c.get("id", f"c{i+1}"), name=c.get("name", "Unknown"),
-            definition=c.get("definition", ""), related_to=c.get("related_to", [])
+            definition=c.get("definition", ""), 
+            equations=c.get("equations", []),
+            examples=c.get("examples", []),
+            related_to=c.get("related_to", [])
         ) for i, c in enumerate(concept_dicts)
     ]
     sessions[session_id]["concepts"] = concepts
@@ -279,17 +306,30 @@ async def generate_images(session_id: str = Form(...)):
     async def process_concept(concept: Concept):
         try:
             concept.status = "generating"
-            image_prompt = prompts_dict.get(concept.id, f"A glowing golden parabolic curve intersecting a neon blue plane on a pitch-black background")
-            concept.image_prompt = image_prompt
-            if STABILITY_API_KEY:
-                img_data = await generate_stability_image(image_prompt)
-                concept.image_url = img_data or get_pollinations_url(image_prompt)
-            else:
-                concept.image_url = get_pollinations_url(image_prompt)
+            promptsList = prompts_dict.get(concept.id, [
+                f"A glowing golden parabolic curve intersecting a neon blue plane on a pitch-black background",
+                f"Glowing neon green and pink vectors spanning out against a dark matrix grid",
+                f"Abstract minimalist data points connected by glowing blue lines on a black canvas"
+            ])
+            if isinstance(promptsList, str):
+                promptsList = [promptsList, promptsList, promptsList]
+            promptsList = promptsList[:3] # Ensure exactly 3
+
+            concept.image_prompts = promptsList
+            
+            async def fetch_img(p):
+                if STABILITY_API_KEY:
+                    data = await generate_stability_image(p)
+                    return data or get_pollinations_url(p)
+                return get_pollinations_url(p)
+            
+            # Fire all 3 stability generation requests simultaneously for this exact concept
+            img_results = await asyncio.gather(*(fetch_img(p) for p in promptsList))
+            concept.image_urls = list(img_results)
             concept.status = "done"
         except Exception as e:
             concept.status = "error"
-            concept.image_prompt = f"Error: {str(e)}"
+            concept.image_prompts = [f"Error: {str(e)}"]
         return concept
 
     processed_tuples = await asyncio.gather(*(process_concept(c) for c in concepts))
