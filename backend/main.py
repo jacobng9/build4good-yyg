@@ -1,5 +1,5 @@
 """
-NotesViz — Backend API (Active - Reload)
+NotesViz — Backend API (Active - Reload 3)
 FastAPI server with endpoints for note parsing, concept extraction, and image generation.
 (reloaded)
 """
@@ -101,8 +101,9 @@ Return ONLY valid JSON in this exact format (no markdown fences, just raw JSON):
 }}
 
 Rules:
-- Deeply extract mathematical/technical context where applicable. If no explicit equations or examples exist, synthesize highly relevant generic textbook examples.
-- Include up to 2 key equations formatted in clean string notation (e.g. standard mathematical syntax).
+- Deeply extract mathematical/technical context where applicable. If no explicit equations exist, synthesize highly relevant generic textbook examples.
+- CRITICAL: You MUST wrap ALL inline mathematical expressions, variables, and formulas inside the `definition`, `problem`, and `solution` strings with $ signs (e.g., this is a variable $x$, and this is a formula $a^2 + b^2 = c^2$). 
+- Equations inside the `equations` array list must NOT have $ signs, just provide the raw LaTeX string.
 - Include 1-2 practical example problems/solutions per concept to build deeper intuitive understanding.
 - Do not exceed 8 concepts. Map connections via related_to IDs.
 
@@ -180,6 +181,9 @@ async def generate_image_prompts_batch(concepts: list[Concept]) -> dict[str, str
     if response_text.startswith("```"):
         response_text = re.sub(r"^```(?:json)?\s*\n?", "", response_text)
         response_text = re.sub(r"\n?```\s*$", "", response_text)
+    # Aggressively defensively double-escape isolated unescaped LaTeX backslashes the AI might hallucinate.
+    # We use negative lookbehind (?<!\\) and lookahead to ONLY target naked single backslashes that violate JSON standards.
+    response_text = re.sub(r'(?<!\\)\\(?![\\/bfnrtu"])', r'\\\\', response_text)
     
     try:
         return json.loads(response_text)
@@ -187,14 +191,11 @@ async def generate_image_prompts_batch(concepts: list[Concept]) -> dict[str, str
         return {}
 
 def get_pollinations_url(prompt: str, width: int = 1024, height: int = 1024) -> str:
-    """Return a highly reliable completely free deterministic AI concept image using Pollinations as fallback."""
-    # Add negative prompting and strong styles to ensure high quality math rendering
-    enhanced_prompt = f"{prompt}, dark theme, extremely beautiful abstract minimalist math visualization, highly detailed structure, 3Blue1Brown aesthetic, glowing, pitch black background"
-    # URL encode the prompt and fix seed
-    encoded_prompt = quote(enhanced_prompt)
-    seed = abs(hash(prompt[:50])) % 9999999
-    # We use Pollinations AI API which directly generates text-to-image instantly for free over GET requests
-    return f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={width}&height={height}&nologo=true&seed={seed}&model=flux"
+    """Return an aesthetic abstract blurred gradient using Picsum as fallback."""
+    # Since free AI generators require authentication or ratelimit heavily, we fall back to a blurred abstract aesthetic
+    # This prevents 'walruses' and other real-world stock photos from breaking the math vibe.
+    prompt_seed = quote(prompt[:50])
+    return f"https://picsum.photos/seed/{prompt_seed}/{width}/{height}?blur=6"
 
 import asyncio
 stability_semaphore = asyncio.Semaphore(5)

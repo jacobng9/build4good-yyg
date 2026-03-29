@@ -49,8 +49,10 @@ const renderMathText = (text: string) => {
 const renderKaTeX = (latex: string) => {
   if (typeof (window as any).katex !== 'undefined') {
     try {
-      const html = (window as any).katex.renderToString(latex, { throwOnError: false, displayMode: true });
-      return <div dangerouslySetInnerHTML={{ __html: html }} className="text-blue-100 drop-shadow-[0_0_8px_rgba(59,130,246,0.5)] w-full overflow-x-auto text-center" />;
+      // Defensively strip out stray $ or $$ wrappers that might crash the math renderer structurally
+      const cleanLatex = latex.replace(/^\s*\$+/, '').replace(/\$+\s*$/, '').trim();
+      const html = (window as any).katex.renderToString(cleanLatex, { throwOnError: false, displayMode: true });
+      return <div dangerouslySetInnerHTML={{ __html: html }} className="text-blue-100 drop-shadow-[0_0_8px_rgba(59,130,246,0.5)] w-full overflow-x-auto text-center flex justify-center py-2" />;
     } catch(e) {}
   }
   return <span className="font-serif italic tracking-wider text-xl text-blue-100 drop-shadow-[0_0_8px_rgba(59,130,246,0.6)]">{latex}</span>;
