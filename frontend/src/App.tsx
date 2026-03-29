@@ -252,12 +252,11 @@ function App() {
                       {stage.status === 'error' && <span className="text-red-400">✕</span>}
                       {stage.status === 'pending' && <span className="text-gray-600">○</span>}
                     </div>
-                    <span className={`text-sm font-medium ${
-                      stage.status === 'active' ? 'text-brand-300' :
-                      stage.status === 'done' ? 'text-green-300' :
-                      stage.status === 'error' ? 'text-red-300' :
-                      'text-gray-600'
-                    }`}>
+                    <span className={`text-sm font-medium ${stage.status === 'active' ? 'text-brand-300' :
+                        stage.status === 'done' ? 'text-green-300' :
+                          stage.status === 'error' ? 'text-red-300' :
+                            'text-gray-600'
+                      }`}>
                       {stage.label}
                     </span>
                   </motion.div>
